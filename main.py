@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, String, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from datetime import datetime
 import uuid
 
 app = FastAPI()
@@ -20,6 +21,7 @@ class TaskDB(Base):
     id = Column(String, primary_key=True, index=True)
     title = Column(String)
     completed = Column(Boolean, default=False)
+    created_at = Column(String)
 
 Base.metadata.create_all(bind=engine)
 
