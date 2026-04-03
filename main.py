@@ -138,10 +138,19 @@ def create_task(task: Task, background_tasks: BackgroundTasks):
 
 # Get all tasks
 @app.get("/tasks")
-def get_tasks():
+def get_tasks(status: str = None, min_number: int = None):
     db = SessionLocal()
-    tasks = db.query(TaskDB).all()
+    query = db.query(TaskDB)
+
+    if status:
+        query = query.filter(TaskDB.status == status)
+
+    if min_number is not None:
+        query = query.filter(TaskDB.number >= min_number)
+
+    tasks = query.all()
     db.close()
+
     return tasks
 
 # Get single task
