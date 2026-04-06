@@ -8,11 +8,14 @@ import uuid
 import time
 import random
 import logging
+import os
 
-# Database setup
-DATABASE_URL = "sqlite:///./tasks.db"
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:postgres@db:5432/tasks_db"
+)
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 
 Base = declarative_base()
@@ -33,17 +36,21 @@ class TaskDB(Base):
     completed = Column(Boolean, default=False)
     job_id = Column(String)
     status = Column(String, default="pending")
+
     number = Column(Integer)
     operand = Column(Integer)
     operation = Column(String)
     result = Column(Integer)
+
+    retries = Column(Integer, default=0)
 
 # Create tables
 Base.metadata.create_all(bind=engine)
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
 )
 
 # Pydantic model
@@ -54,9 +61,6 @@ class Task(BaseModel):
     operation: Operation
 
 app = FastAPI()
-
-# In-memory job store
-jobs = {}
 
 # DB session context manager
 @contextmanager
@@ -75,15 +79,10 @@ def calculate(number: int, operand: int, operation: Operation) -> float:
     elif operation == Operation.multiply:
         return number * operand
     elif operation == Operation.divide:
-        if operand == 0:
-            raise ValueError("Cannot divide by zero")
         return number / operand
 
 # Background job processor
 def process_job(job_id: str, task_id: str):
-    job = jobs[job_id]
-    job["status"] = "running"
-
     for attempt in range(1, MAX_RETRIES + 2):
         time.sleep(3)
 
@@ -91,26 +90,30 @@ def process_job(job_id: str, task_id: str):
             task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
 
             if not task:
-                logging.error(f"Task {task_id} not found for job {job_id}")
-                job["status"] = "failed"
+                logging.error(f"Task {task_id} not found")
                 return
 
-            if random.choice([True, False]):  # simulated failure
+            task.status = "running"
+
+            # Simulated failure
+            if random.choice([True, False]):
+                task.retries = attempt
                 logging.warning(f"Job {job_id} failed (attempt {attempt})")
-                job["retries"] = attempt
-                job["status"] = "retrying" if attempt <= MAX_RETRIES else "failed"
+
                 if attempt > MAX_RETRIES:
                     task.status = "failed"
                     db.commit()
                     return
+
+                task.status = "retrying"
+                db.commit()
                 continue
 
             # Success
             try:
                 result = calculate(task.number, task.operand, task.operation)
             except ValueError as e:
-                logging.error(f"Job {job_id} calculation error: {e}")
-                job["status"] = "failed"
+                logging.error(f"Calculation error: {e}")
                 task.status = "failed"
                 db.commit()
                 return
@@ -118,11 +121,13 @@ def process_job(job_id: str, task_id: str):
             task.result = result
             task.status = "completed"
             task.completed = True
-            job["status"] = "completed"
-            logging.info(f"Job {job_id} completed: {task.number} {task.operation} {task.operand} = {result}")
+
+            logging.info(
+                f"Job {job_id} completed: {task.number} {task.operation} {task.operand} = {result}"
+            )
+
             db.commit()
             return
-
 
 # Create task (triggers job)
 @app.post("/tasks")
@@ -140,54 +145,71 @@ def create_task(task: Task, background_tasks: BackgroundTasks):
             number=task.number,
             operand=task.operand,
             operation=task.operation,
-            result=None
+            result=None,
+            retries=0
         )
         db.add(db_task)
         db.commit()
 
-    jobs[job_id] = {"status": "pending", "retries": 0}
     background_tasks.add_task(process_job, job_id, task_id)
 
     return {"task_id": task_id, "job_id": job_id, "status": "pending"}
 
-
-# Get all tasks
+# Get all tasks (with filtering)
 @app.get("/tasks")
 def get_tasks(status: str = None, min_number: int = None):
     with get_db() as db:
         query = db.query(TaskDB)
+
         if status:
             query = query.filter(TaskDB.status == status)
+
         if min_number is not None:
             query = query.filter(TaskDB.number >= min_number)
-        return query.all()
 
+        return query.all()
 
 # Get single task
 @app.get("/tasks/{task_id}")
 def get_task(task_id: str):
     with get_db() as db:
         task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    return task
 
+    return task
 
 # Delete task
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: str):
     with get_db() as db:
         task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
+
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
+
         db.delete(task)
         db.commit()
+
     return {"message": "Task deleted"}
 
-
-# Get job status
+# Get job status (from DB)
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
-    if job_id not in jobs:
+    with get_db() as db:
+        task = db.query(TaskDB).filter(TaskDB.job_id == job_id).first()
+
+    if not task:
         raise HTTPException(status_code=404, detail="Job not found")
-    return jobs[job_id]
+
+    return {
+        "job_id": job_id,
+        "status": task.status,
+        "retries": task.retries
+    }
+
+# Health check (for Kubernetes)
+@app.get("/health")
+def health():
+    return {"status": "ok"}
