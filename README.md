@@ -1,48 +1,55 @@
 # Async Task Processing API
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-Framework-green)
-![SQLAlchemy](https://img.shields.io/badge/Database-SQLAlchemy-orange)
-![Status](https://img.shields.io/badge/Project-Active-success)
-
----
+![Python](https://img.shields.io/badge/Python-3.11-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-Framework-009688)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-336791)
+![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED)
 
 ## Overview
-
-This project is a backend system built with FastAPI that simulates real-world asynchronous job processing. Users can create tasks that trigger background jobs, which process data, handle failures with retries, and store results in a database.
-
-The system demonstrates key backend engineering concepts such as API design, background processing, retry logic, logging, and database interaction.
-
----
+Backend API built with FastAPI that processes tasks asynchronously. Tasks trigger background jobs that perform calculations, retry on failure, and store results in PostgreSQL.
 
 ## Features
-
-- RESTful API for task management  
-- Background job processing using FastAPI BackgroundTasks  
-- Retry logic for failed jobs  
-- Structured logging for observability  
-- SQLite database for persistence  
-- Input validation using Pydantic  
-- Dynamic query filtering for retrieving tasks  
-- Asynchronous processing with real computation (number × 10)  
-
----
+- REST API
+- Background jobs with retries
+- PostgreSQL database
+- Dockerized services
+- Docker Compose orchestration
 
 ## Tech Stack
+- Python
+- FastAPI
+- SQLAlchemy
+- PostgreSQL
+- Docker
+- Docker Compose
 
-- Python  
-- FastAPI  
-- SQLAlchemy  
-- SQLite  
-- Uvicorn  
+## Run with Docker
 
----
+Start:
+docker compose up --build
+
+Run in background:
+docker compose up -d
+
+Stop:
+docker compose down
+
+## API
+
+Docs:
+http://localhost:8000/docs
+
+Example request:
+{
+  "title": "test",
+  "number": 10,
+  "operand": 5,
+  "operation": "multiply"
+}
 
 ## How It Works
-
-1. A user sends a request to create a task  
-2. The API stores the task in the database  
-3. A background job is triggered  
-4. The job processes the task (multiplies a number by 10)  
-5. If the job fails, it retries up to a defined limit  
-6. The task is updated with the result and status  
+1. Create task via API
+2. Task stored in PostgreSQL
+3. Background job runs
+4. Retries on failure
+5. Result saved
